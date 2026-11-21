@@ -116,6 +116,40 @@ resilienceos/
 
 ---
 
+## Hostel Fee Management Module
+
+The backend includes a Java hostel fee module implementing the following operations:
+
+- Add student fee records
+- Record and validate payments
+- Track paid, pending, and partially paid fees
+- Calculate remaining balances
+- Maintain individual payment histories
+- Update payment status
+- Use the module through a `Scanner`-based console or REST API
+
+Core classes:
+
+- `FeeRecord` - abstract base class
+- `Fee` - concrete fee record with total, paid, and remaining amounts
+- `FeeManager` - HashMap-backed fee lookup and ArrayList-based fee lists
+- `PaymentService` - payment validation and payment history service
+- `PaymentHistory` - manually implemented linked-list data structure
+- `InvalidPaymentException` and `FeeNotFoundException` - custom exceptions
+
+Run the console module:
+
+```bash
+cd backend
+.\mvnw.cmd package -DskipTests
+..\tools\jdk-21\bin\java.exe -cp target\classes com.resilienceos.fee.HostelFeeConsole
+```
+
+REST endpoints are available under `/api/fees`, including adding fees, recording payments,
+checking paid or pending records, retrieving balances, viewing history, and updating status.
+
+---
+
 ## Getting Started
 
 ### 1. Run Backend (Java 21 + Spring Boot)
