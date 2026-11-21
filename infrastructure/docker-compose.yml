@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # ==========================================================
+  # RESILIENCEOS — FRONTEND
+  # ==========================================================
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: resilienceos-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://backend:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - resilienceos-mesh
+
+  # ==========================================================
+  # RESILIENCEOS — JAVA SPRING BOOT CORE ENGINE
+  # ==========================================================
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: resilienceos-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=resilienceos
+      - DB_USER=postgres
+      - DB_PASSWORD=resilience_secret_key
+      - REDIS_HOST=redis
+      - NEO4J_URI=bolt://neo4j:7687
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - resilienceos-mesh
+
+  # ==========================================================
+  # POSTGRESQL + POSTGIS SPATIAL DATABASE
+  # ==========================================================
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: resilienceos-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=resilienceos
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=resilience_secret_key
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database/init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - resilienceos-mesh
+
+  # ==========================================================
+  # NEO4J GRAPH RELATIONSHIP ENGINE
+  # ==========================================================
+  neo4j:
+    image: neo4j:5.20-community
+    container_name: resilienceos-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/resilience_graph_pass
+    volumes:
+      - neo4jdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - resilienceos-mesh
+
+  # ==========================================================
+  # REDIS CACHE & TEMPORARY TOPOLOGY STATE
+  # ==========================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: resilienceos-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - resilienceos-mesh
+
+  # ==========================================================
+  # APACHE KAFKA & ZOOKEEPER EVENT BUS
+  # ==========================================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: resilienceos-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - resilienceos-mesh
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: resilienceos-kafka
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - resilienceos-mesh
+
+volumes:
+  pgdata:
+  neo4jdata:
+
+networks:
+  resilienceos-mesh:
+    driver: bridge
